@@ -19,7 +19,9 @@ void SystemClock_Config(void);
 
 /* USER CODE BEGIN 0 */
 static volatile uint32_t s_lastTick = 0;
+static uint8_t s_tickDiv = 0;
 #define MOTOR_TICK_MS  5u
+#define TELEM_DIV      10u    /* telemetry every 10 ticks = 50 ms */
 /* USER CODE END 0 */
 
 /**
@@ -49,8 +51,12 @@ int main(void)
     /* Non-blocking 5 ms scheduler, same cadence as the contest firmware. */
     if ((uint32_t)(HAL_GetTick() - s_lastTick) >= MOTOR_TICK_MS) {
       s_lastTick = HAL_GetTick();
-      Motor_Tick();                 /* ramp + apply sin(v1) = k*cos(v2) */
+      Motor_Tick();                 /* coupling + feedback + watchdog */
       HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);  /* heartbeat LED */
+      if (++s_tickDiv >= TELEM_DIV) {
+        s_tickDiv = 0;
+        PROTO_TelemetryTick();
+      }
     }
   }
 }

@@ -410,6 +410,21 @@
               <FilePath>../Core/Src/protocol.c</FilePath>
             </File>
             <File>
+              <FileName>coupling.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/coupling.c</FilePath>
+            </File>
+            <File>
+              <FileName>pid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/pid.c</FilePath>
+            </File>
+            <File>
+              <FileName>encoder.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/encoder.c</FilePath>
+            </File>
+            <File>
               <FileName>gpio.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/gpio.c</FilePath>
