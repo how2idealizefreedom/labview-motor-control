@@ -1,0 +1,27 @@
+# Keil / ARM compiler artifacts
+*.o
+*.d
+*.axf
+*.hex
+*.map
+*.htm
+*.lnp
+*.sct
+*.dep
+*.uvguix.*
+*.bak
+MDK-ARM/Debug/
+MDK-ARM/Release/
+MDK-ARM/Objects/
+MDK-ARM/Listings/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
