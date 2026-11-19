@@ -1,145 +1,99 @@
-# LabVIEW 上位机搭建指南（双电机线性联动）
+# LabVIEW 上位机搭建指南
 
-这份文档回答一个问题：**LabVIEW 上位机调电机，到底需要什么、怎么做。** 照着做能得到一个拖动滑块、两个电机按比例同步转的上位机。
+LabVIEW 通过 VISA 打开 STM32 的虚拟串口，发送 `S` / `K` 命令，接收 `R` 返回的状态。
 
----
+## 1. 清单
 
-## 1. 需要的软硬件清单
+| 类别 | 内容 |
+|---|---|
+| 软件 | LabVIEW 2018+、NI-VISA |
+| 硬件 | STM32F103C8T6 板、双路 H 桥（TB6612 等）、两个直流电机 |
+| 连接 | USB 线（PC↔板）、电机驱动独立供电 |
 
-| 类别 | 具体 | 说明 |
-|---|---|---|
-| PC 软件 | LabVIEW（2018 及以上均可） | 学校机房/个人安装 |
-| 驱动 | NI-VISA（或厂商 CDC 驱动） | 装 LabVIEW 时通常自带 VISA；STM32 USB CDC 在 Windows 下一般免驱识别为 COM 口 |
-| 下位机 | STM32F103C8T6 板 + 本仓库固件 | 烧录 `firmware/` 里的工程 |
-| 电机驱动 | TB6612FNG / DRV8833 等双路 H 桥 | 你电赛用过 TB6612，直接用 |
-| 电机 | 两个直流减速电机 | 带编码器更好，但本项目开环即可验证线性关系 |
-| 连接 | USB 线（PC↔板）+ 电机电源线 | 注意电机驱动要独立供电，别从板上取电 |
+STM32 USB CDC 在 Windows 下一般免驱识别为 COM 口。
 
-**通信链路一句话**：LabVIEW 通过 VISA 打开一个虚拟串口 → 发送 ASCII 命令 → STM32 的 USB CDC 接收 → 解析 → 按 `vB = k·vA` 驱动两个电机。
+## 2. 找串口
 
----
+1. 烧录固件，USB 线接板子的 USB 口。
+2. 设备管理器 → 端口，记下 `USB Serial Device (COMx)`。
+3. 没出现就装 ST VCP 驱动，或检查 `usbd_desc.c` 的 VID/PID。
 
-## 2. 串口怎么找
+先用 `python host/motor_host.py --port COMx` 确认能通，再开 LabVIEW。
 
-1. 烧录固件后，把 USB 线接到 STM32 的 USB 口（不是串口下载口）。
-2. Windows 设备管理器 → 端口（COM 和 LPT）→ 看到 `USB Serial Device (COMx)`，记下 `COMx`。
-3. 如果没出现：装 STM32 USB CDC 驱动（ST 官网 VCP 驱动），或检查工程 `usbd_desc.c` 里的 VID/PID。
-
-> 先用仓库里的 `host/motor_host.py --port COMx` 跑一下，能通再开 LabVIEW，能省掉一半排错时间。
-
----
-
-## 3. 通信协议（上位机和下位机的"契约"）
-
-一行命令以换行 `\n` 结尾：
+## 3. 协议
 
 | 命令 | 含义 | 例子 |
 |---|---|---|
-| `S<速度>` | 设电机 A 速度，范围 -1000~1000（正负=方向）；B 自动 = k×A | `S+500\n` |
-| `K<百分比>` | 设联动比例，0~100 | `K50\n` → B = 0.5×A |
-| `R\n` | 查询状态 | 返回 `A=+500 B=+250 K=0.50\r\n` |
-| `X\n` | 立即刹车 | — |
-| `?\n` | 帮助 | — |
+| `S<速度>` | 设电机 A，范围 -1000~1000‰ | `S+500\n` |
+| `K<百分比>` | 设 k，范围 1~100 | `K50\n` |
+| `R\n` | 查状态 | `A=+500 B=+972 K=0.50` |
+| `X\n` | 急停 | — |
 
-**这就是"线性速度关系"的全部**：主机只发一个 A 的速度，B 由下位机按固定比例算出。例如 K=50 时，A=600 → B=300，A=-400 → B=-200，任意时刻 `B/A = 0.5` 恒定。
+电机 B 由下位机解算，满足 `sin(v1) = k·cos(v2)`。
 
----
+## 4. VI 搭建
 
-## 4. LabVIEW VI 分步搭建（前面板 + 程序框图）
+前面板控件：
 
-### 4.1 前面板（Front Panel）放这些控件
-
-| 控件 | 类型 | 名字 | 作用 |
+| 控件 | 类型 | 名字 | 范围 |
 |---|---|---|---|
-| 速度滑块 | 数值输入 / 水平滑块 | `Speed A` | 范围 -1000~1000，代表电机 A 速度 |
-| 比例滑块 | 数值输入 / 旋钮 | `Ratio K (%)` | 范围 0~100，默认 50 |
-| 停止按钮 | 布尔按钮 | `STOP` | 急停 |
-| 状态显示 | 字符串显示 | `Status` | 显示下位机返回的状态 |
-| 实际 A/B 显示 | 两个数值显示 | `A act` / `B act` | 解析返回的实际速度 |
-| 串口资源 | VISA 资源名输入 | `VISA Resource` | 填 `COMx` |
+| 速度滑块 | 数值输入 | `Speed A` | -1000~1000 |
+| 比例输入 | 数值输入 | `Ratio K` | 1~100，默认 100 |
+| 停止按钮 | 布尔 | `STOP` | — |
+| 状态显示 | 字符串显示 | `Status` | — |
+| 实际值 | 两个数值显示 | `A act` / `B act` | — |
+| 串口 | VISA 资源名 | `VISA Resource` | `COMx` |
 
-### 4.2 程序框图（Block Diagram）搭建顺序
+程序框图：
 
-**① 初始化串口**
 ```
-VISA Configure Serial Port
-  - VISA Resource Name <- 前面板 "VISA Resource"
-  - Baud Rate = 115200
-  - Data Bits = 8, Stop Bits = 1, Parity = None
-```
+① VISA Configure Serial Port
+     Baud Rate = 115200, 8 data, 1 stop, no parity
 
-**② 发送速度命令（主循环里）**
-```
-Build String / Concatenate Strings:
-  "S" + [Format into String: "%+d" 接 Speed A] + "\n"
--> VISA Write
-```
-> 关键：`%+d` 保证正数带 `+` 号（`S+500`），和固件 `parse_int` 兼容。
+② 速度变化时发送
+     Concatenate Strings: "S" + Format("%+d", Speed A) + "\n"
+     -> VISA Write
+     %+d 保证正数带 + 号，与固件解析兼容
 
-**③ 发送比例命令（比例值变化时）**
-```
-"K" + [Format "%d" 接 Ratio K (%)] + "\n" -> VISA Write
-```
-> 用一个"值改变"事件或判断上一次比例是否变化，避免每循环都发。
+③ 比例变化时发送
+     "K" + Format("%d", Ratio K) + "\n" -> VISA Write
 
-**④ 读取返回状态**
-```
-VISA Read (Byte Count = 100)
--> 字符串显示 "Status"
--> 用 Match Pattern / Scan from String 解析:
-     "A=%+d B=%+d K=%f"  -> A act, B act, K
+④ 读取状态
+     VISA Read (Byte Count = 100) -> Status
+     Scan from String: "A=%d B=%d K=%f" -> A act, B act
+
+⑤ 急停
+     STOP -> VISA Write "X\n" -> VISA Close
+
+⑥ While Loop，周期 50 ms
 ```
 
-**⑤ 急停**
-```
-STOP 按钮值为真 -> VISA Write "X\n"
-```
+建议用 Event Structure 分三个分支：`Speed A: Value Change`、`Ratio K: Value Change`、`STOP: Value Change`。只在操作时发命令，串口不会拥堵。
 
-**⑥ 循环与释放**
-```
-While Loop (直到 STOP 按下)
-  - 加一个 Wait (ms) = 50，避免刷屏
-循环结束 -> VISA Close
-```
+## 5. 验证
 
-### 4.3 事件结构建议（更规范的做法）
+拖动 `Speed A`，读 `A act` / `B act`：
 
-用 **Event Structure** 替代轮询，三个事件分支：
-- `Speed A: Value Change` → 发 `S` 命令
-- `Ratio K: Value Change` → 发 `K` 命令
-- `STOP: Value Change` → 发 `X` 命令 + 退出循环
-
-这样只有用户操作时才发命令，串口不拥堵，是工业上位机的标准写法。**面试讲这个会加分**——说明你懂事件驱动而不是无脑轮询。
-
----
-
-## 5. 验证线性关系（上位机侧）
-
-拖动 Speed A 滑块，观察 `A act` / `B act`：
-
-| Speed A | Ratio K | 期望 B act |
+| k | A | B |
 |---:|---:|---:|
-| +600 | 50% | +300 |
-| -400 | 50% | -200 |
-| +800 | 25% | +200 |
-| -600 | 75% | -450 |
+| 1.00 | +600 | +600 |
+| 1.00 | -400 | -400 |
+| 0.50 | +166 | +344 |
+| 0.50 | +333 | +972 |
+| 0.25 | +80 | +334 |
 
-若在整条范围内 `B ≈ (K/100)×A`，线性联动验证通过。可以把这组成果做成前面板上的一张 XY 图（A 为 X 轴、B 为 Y 轴），**斜率就是 K 的一条直线**——这是最有说服力的演示，面试官一眼就懂。
+k=1 时 A=B。k<1 时 A 被限制在 `|a| ≤ (2000/π)·asin(k)` 内，B 变化更大。把多组 (A, B) 做成 XY 图可以看到关系曲线。
 
----
+## 6. 排查
 
-## 6. 常见问题排查
-
-| 现象 | 原因 | 解决 |
+| 现象 | 原因 | 处理 |
 |---|---|---|
-| VISA 打不开串口 | 端口号错 / 被占用 | 设备管理器确认 COMx，关闭串口调试助手 |
+| VISA 打不开 | 端口错或被占用 | 确认 COMx，关闭其他串口工具 |
 | 发命令无返回 | 没加 `\n` | 命令必须以换行结尾 |
-| 返回乱码 | 波特率不匹配 | 固件的 CDC 是虚拟串口，波特率任意但两端要一致，LabVIEW 设 115200 |
-| 电机不转 | 驱动未供电 / 方向脚接错 | 电机驱动独立供电，检查 PB12/13、PB14/15 接线 |
-| 两电机转向相反 | 电机线序 / 方向脚定义 | 对调其中一路电机的两根线，或改 `motor.c` 里的方向 GPIO |
+| 返回乱码 | 两端波特率不一致 | LabVIEW 设 115200 |
+| 电机不转 | 驱动没供电 / 方向脚接错 | 驱动独立供电，检查 PB12/13、PB14/15 |
+| 两电机转向相反 | 线序或方向定义 | 对调一路电机线，或改 `motor.c` 方向 GPIO |
 
----
+## 7. 没有 LabVIEW 时
 
-## 7. 如果没有 LabVIEW 环境
-
-仓库的 `host/motor_host.py` 是同等功能的命令行上位机，`--mock` 模式不需要任何硬件就能演示完整协议和线性联动逻辑。面试时若没有 LabVIEW 授权，用 Python 演示一样能讲清楚原理，而且更容易展示测试过程。
+`host/motor_host.py` 是同协议的命令行上位机。`--mock` 不需要硬件，`--sweep` 会扫一遍并打印 `sin(v1) - k·cos(v2)` 的残差。
