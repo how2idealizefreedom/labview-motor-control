@@ -54,7 +54,7 @@ static void decode(const char *ln)
     if (ln[0] == '\0') return;
 
     switch (ln[0]) {
-    case 'S': {                       /* S<speed> : set A, B = k*A */
+    case 'S': {                       /* S<speed> : set A, B solved from sin(v1)=k*cos(v2) */
         if (parse_int(ln + 1, &value)) {
             Motor_SetSpeedA(value);
             cdc_send("OK\r\n");
@@ -63,7 +63,7 @@ static void decode(const char *ln)
         }
         break;
     }
-    case 'K': {                       /* K<percent> : set coupling ratio */
+    case 'K': {                       /* K<percent> : set k = percent/100, 1..100 */
         if (parse_int(ln + 1, &value)) {
             Motor_SetRatio(value * 10);   /* percent -> permille */
             cdc_send("OK\r\n");
@@ -80,7 +80,7 @@ static void decode(const char *ln)
         cdc_send("STOPPED\r\n");
         break;
     case '?':                          /* ? : help */
-        cdc_send("CMD: S+500 K50 R X ?\r\n");
+        cdc_send("CMD: S+500 K100 R X ?\r\n");
         break;
     default:
         cdc_send("ERR\r\n");

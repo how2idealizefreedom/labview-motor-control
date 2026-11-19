@@ -4,10 +4,10 @@
   * @brief   ASCII command protocol over USB CDC (virtual COM port).
   *
   *          Frame format:  <CMD><payload>\n
-  *            S<speed>     set motor A speed, per mille [-1000,1000]; B = k*A
+  *            S<speed>     set motor A speed, per mille [-1000,1000]
   *                           e.g. "S+500\n"  or  "S-350\n"
-  *            K<ratio>     set coupling ratio in percent [0,100]
-  *                           e.g. "K50\n" -> kB = 0.50
+  *            K<ratio>     set k in percent [1,100]
+  *                           e.g. "K50\n" -> k = 0.50
   *            R            request status -> reply "A=%d B=%d K=%d.%02d\n"
   *            X            immediate stop (brake both)
   *            ?            help string

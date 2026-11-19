@@ -2,7 +2,7 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Dual-motor linear speed coupling, LabVIEW host control
+  * @brief          : Dual-motor sine/cosine speed coupling, LabVIEW host control
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -49,7 +49,7 @@ int main(void)
     /* Non-blocking 5 ms scheduler, same cadence as the contest firmware. */
     if ((uint32_t)(HAL_GetTick() - s_lastTick) >= MOTOR_TICK_MS) {
       s_lastTick = HAL_GetTick();
-      Motor_Tick();                 /* ramp + apply the linear coupling */
+      Motor_Tick();                 /* ramp + apply sin(v1) = k*cos(v2) */
       HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);  /* heartbeat LED */
     }
   }
