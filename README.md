@@ -1,4 +1,4 @@
-# stm32-dual-motor-control
+# labview-motor-control
 
 STM32F103C8T6 双直流电机控制。上位机经 USB CDC 发一个速度指令，下位机解算另一个电机，使两者满足：
 
